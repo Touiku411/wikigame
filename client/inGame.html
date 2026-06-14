@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wikipedia Race - 遊戲中</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="gameScreen" class="screen active">
+    <div class="game-container">
+        <!-- 進度條 -->
+        <div class="progress-bar">
+            <span class="progress-label">連眼條</span>
+            <div class="progress-fill-wrapper">
+                <div class="progress-fill"></div>
+            </div>
+            <span class="progress-percent">0%</span>
+        </div>
+
+        <!-- 遊戲主區 -->
+        <div class="game-main">
+            <!-- 左：遊戲區域 -->
+            <div class="game-area">
+                <div class="links-section">
+                    <h3>Wikipedia 頁面</h3>
+                    <div class="wiki-frame-container">
+                        <div id="wikiContent" style="padding: 20px; border: 1px solid #ddd; border-radius: 8px; overflow-y: auto; max-height: 600px; background: white;">
+                            <p>Loading...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右：側欄 -->
+            <div class="sidebar">
+                <!-- 遊戲資訊 -->
+                <div class="game-info-box">
+                    <div class="info-item">
+                        <span class="info-label">目標</span>
+                        <span class="info-value" id="targetTitle">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">目前</span>
+                        <span class="info-value" id="currentTitle">-</span>
+                    </div>
+                </div>
+
+                <!-- 返回按鈕 -->
+                <button id="backBtn" class="back-btn" onclick="goBackPage()" style="display: none;">
+                    ← 返回上一頁
+                </button>
+
+                <!-- 提示框 -->
+                <div class="hint-circle">
+                    <div class="hint-content">
+                        <span class="hint-icon">💡</span>
+                        <p>提示</p>
+                        <button id="hint-btn" type="button">AI 提示</button>
+                        <small>盡量用最少步數達成目標</small>
+                    </div>
+                </div>
+
+                <!-- 路徑 -->
+                <div class="path-box">
+                    <h4>路徑</h4>
+                    <ul id="pathList" class="path-list" style="max-height: 100px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #f9f9f9;"></ul>
+                </div>
+
+                <!-- 統計 -->
+                <div class="stats-box">
+                    <div class="stat-item">
+                        <span class="stat-label">步數</span>
+                        <span class="stat-value" id="stepCount">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">時間</span>
+                        <span class="stat-value" id="timer">0<small>秒</small></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="inGame.js"></script>
+
+</body>
+</html>
