@@ -1,6 +1,6 @@
 #!/usr/bin/fish
 
-python3 -m venv .venv
+python -m venv .venv
 
 source .venv/bin/activate.fish
 
