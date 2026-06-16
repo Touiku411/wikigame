@@ -86,12 +86,10 @@ def find_path_from_current():
         target_url = crawler.make_url(target_title, "en")
 
         path, logs, elapsed_time, discovered = crawler.find_path(current_url, target_url)
-        display_path = crawler.get_path_display_names(path, "en")
 
         return jsonify({
             'success': True,
             'path': path,
-            'display_path': display_path,
             'logs': logs,
             'time': elapsed_time,
             'discovered': discovered

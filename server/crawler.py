@@ -57,7 +57,8 @@ def get_fwd_links_api(title, lang="en"):
         print(f"API ERROR for {title}: {e}")
         return []
 
-def get_fwd_link_items_html(title, lang="en"):
+# 新增這個函數：爬蟲也解析 HTML，並套用跟 server.py 一模一樣的過濾邏輯
+def get_fwd_links_html(title, lang="en"):
     encoded_title = urllib.parse.quote(title.replace(" ", "_"))
     url = f"https://{lang}.wikipedia.org/wiki/{encoded_title}"
     try:
@@ -78,53 +79,24 @@ def get_fwd_link_items_html(title, lang="en"):
             element.decompose()
             
         links = []
-        seen_titles = set()
         for a in main_content.find_all('a', href=True):
             href = a['href']
             # 必須是維基百科條目連結，且排除 Help:, Category: 等特殊空間
             if href.startswith('/wiki/') and ':' not in href:
+                
                 # 🚨 修正重點：把 # (錨點) 和 ? (查詢參數) 後面的字串通通切掉
                 clean_href = href.split('/wiki/')[1].split('#')[0].split('?')[0]
-
+                
                 # 解碼並把底線換回空白
                 link_title = urllib.parse.unquote(clean_href).replace("_", " ")
-                link_text = ' '.join(a.get_text(" ", strip=True).split())
-
+                
                 # 確保不是空字串，且不重複加入
-                if link_title and link_text and link_title not in seen_titles:
-                    links.append({
-                        "title": link_title,
-                        "text": link_text
-                    })
-                    seen_titles.add(link_title)
+                if link_title and link_title not in links:
+                    links.append(link_title)
         return links
     except Exception as e:
         print(f"HTML Parsing ERROR for {title}: {e}")
         return []
-
-# 新增這個函數：爬蟲也解析 HTML，並套用跟 server.py 一模一樣的過濾邏輯
-def get_fwd_links_html(title, lang="en"):
-    return [link["title"] for link in get_fwd_link_items_html(title, lang)]
-
-def get_path_display_names(path_urls, lang="en"):
-    path_titles = [get_title_from_url(url) for url in path_urls]
-    if not path_titles:
-        return []
-
-    display_names = [path_titles[0]]
-    for from_title, to_title in zip(path_titles, path_titles[1:]):
-        link_text = None
-        for link in get_fwd_link_items_html(from_title, lang):
-            if link["title"] == to_title:
-                link_text = link["text"]
-                break
-
-        if link_text and link_text != to_title:
-            display_names.append(f"{link_text} ({to_title})")
-        else:
-            display_names.append(to_title)
-
-    return display_names
 
 
 #反向api
