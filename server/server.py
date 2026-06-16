@@ -8,6 +8,11 @@ from dotenv import load_dotenv
 load_dotenv()
 app = Flask(__name__, static_folder = '../client', static_url_path = '')
 
+@app.route('/', methods = ['GET'])
+def home():
+    return send_from_directory(app.static_folder , 'index.html')
+
+
 def clean_noise(main_content):
     """統一過濾維基百科網頁上的雜訊，確保爬蟲與玩家看到的畫面一致"""
     # 1. 移除腳本、樣式、上標(參考文獻[1][2]等)、表格(包含右側的 Infobox)
@@ -68,24 +73,22 @@ def get_gemini_hint(current_title, target_title, article_text):
     return data['candidates'][0]['content']['parts'][0]['text'].strip()
 
 
-@app.route('/', methods = ['GET'])
-def home():
-    return send_from_directory(app.static_folder , 'index.html')
-
+# 遊戲中算路徑解
 @app.route('/api/path', methods=['POST'])
 def find_path_from_current():
     try:
-        data = request.get_json() or {}
+        data = request.get_json() or {} # 拿到 currentTitle && targetTitle
         current_title = data.get('current_title', '').strip()
         target_title = data.get('target_title', '').strip()
 
+        # 防呆
         if not current_title or not target_title:
             return jsonify({'success': False, 'error': '缺少 current_title 或 target_title'}), 400
 
         current_url = crawler.make_url(current_title, "en")
         target_url = crawler.make_url(target_title, "en")
 
-        path, logs, elapsed_time, discovered = crawler.find_path(current_url, target_url)
+        path, logs, elapsed_time, discovered = crawler.find_path(current_url, target_url) # 呼叫 bfs 回傳 路徑
 
         return jsonify({
             'success': True,
@@ -107,10 +110,15 @@ def find_path_from_current():
         app.logger.error(f"Current path error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
     
+# 開局算路徑解
 @app.route('/find_path', methods=['Get', 'POST'])
 def find_path():
     start_title = ""
     target_title = ""
+    logs = []
+    elapsed_time = 0
+    discovered = 0
+    
     try:
         start_title, target_title = crawler.generate_puzzle(steps= 2, lang= "en")
         start_url = crawler.make_url(start_title, "en")
