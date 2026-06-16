@@ -12,7 +12,7 @@
     <div class="game-container">
         <!-- 進度條 -->
         <div class="progress-bar">
-            <span class="progress-label">連眼條</span>
+            <span class="progress-label">進度條</span>
             <div class="progress-fill-wrapper">
                 <div class="progress-fill"></div>
             </div>
@@ -55,11 +55,21 @@
                 <!-- 提示框 -->
                 <div class="hint-circle">
                     <div class="hint-content">
-                        <span class="hint-icon">💡</span>
-                        <p>提示</p>
-                        <button id="hint-btn" type="button">AI 提示</button>
-                        <small>盡量用最少步數達成目標</small>
+                        <div class="hint-header">
+                            <span class="hint-icon" aria-hidden="true">💡</span>
+                            <div class="hint-title-group">
+                                <p>提示</p>
+                                <small>盡量用最少步數達成目標</small>
+                            </div>
+                        </div>
+                        <button id="hint-btn" class="hint-btn" type="button">AI 提示</button>
                     </div>
+                </div>
+
+                <!-- 答案 -->
+                <div class="answer-box">
+                    <button id="answerBtn" class="answer-btn" type="button">顯示答案</button>
+                    <ol id="answerPathList" class="answer-path-list" hidden></ol>
                 </div>
 
                 <!-- 路徑 -->
@@ -79,6 +89,10 @@
                         <span class="stat-value" id="timer">0<small>秒</small></span>
                     </div>
                 </div>
+
+                <button id="endGameBtn" class="end-game-btn" type="button">
+                    結束遊戲
+                </button>
             </div>
         </div>
     </div>

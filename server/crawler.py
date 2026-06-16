@@ -3,6 +3,7 @@ import requests
 import re
 import urllib.parse
 import random
+from bs4 import BeautifulSoup
 from collections import deque
 
 TIMEOUT = 120  # time limit in seconds for the search
@@ -56,6 +57,76 @@ def get_fwd_links_api(title, lang="en"):
         print(f"API ERROR for {title}: {e}")
         return []
 
+def get_fwd_link_items_html(title, lang="en"):
+    encoded_title = urllib.parse.quote(title.replace(" ", "_"))
+    url = f"https://{lang}.wikipedia.org/wiki/{encoded_title}"
+    try:
+        res = session.get(url, timeout=5)
+        if res.status_code != 200:
+            time.sleep(0.5)
+            return []
+        
+        soup = BeautifulSoup(res.content, 'html.parser')
+        main_content = soup.find('div', id='mw-content-text')
+        if not main_content:
+            return []
+
+        # 統一過濾維基百科網頁上的雜訊
+        for element in main_content(["script", "style", "sup", "table"]):
+            element.decompose()
+        for element in main_content.find_all(['div', 'span'], class_=['reflist', 'navbox', 'infobox', 'metadata', 'mw-editsection']):
+            element.decompose()
+            
+        links = []
+        seen_titles = set()
+        for a in main_content.find_all('a', href=True):
+            href = a['href']
+            # 必須是維基百科條目連結，且排除 Help:, Category: 等特殊空間
+            if href.startswith('/wiki/') and ':' not in href:
+                # 🚨 修正重點：把 # (錨點) 和 ? (查詢參數) 後面的字串通通切掉
+                clean_href = href.split('/wiki/')[1].split('#')[0].split('?')[0]
+
+                # 解碼並把底線換回空白
+                link_title = urllib.parse.unquote(clean_href).replace("_", " ")
+                link_text = ' '.join(a.get_text(" ", strip=True).split())
+
+                # 確保不是空字串，且不重複加入
+                if link_title and link_text and link_title not in seen_titles:
+                    links.append({
+                        "title": link_title,
+                        "text": link_text
+                    })
+                    seen_titles.add(link_title)
+        return links
+    except Exception as e:
+        print(f"HTML Parsing ERROR for {title}: {e}")
+        return []
+
+# 新增這個函數：爬蟲也解析 HTML，並套用跟 server.py 一模一樣的過濾邏輯
+def get_fwd_links_html(title, lang="en"):
+    return [link["title"] for link in get_fwd_link_items_html(title, lang)]
+
+def get_path_display_names(path_urls, lang="en"):
+    path_titles = [get_title_from_url(url) for url in path_urls]
+    if not path_titles:
+        return []
+
+    display_names = [path_titles[0]]
+    for from_title, to_title in zip(path_titles, path_titles[1:]):
+        link_text = None
+        for link in get_fwd_link_items_html(from_title, lang):
+            if link["title"] == to_title:
+                link_text = link["text"]
+                break
+
+        if link_text and link_text != to_title:
+            display_names.append(f"{link_text} ({to_title})")
+        else:
+            display_names.append(to_title)
+
+    return display_names
+
+
 #反向api
 def get_bwd_links_api(title, lang="en"):
     url = f"https://{lang}.wikipedia.org/w/api.php"
@@ -96,8 +167,8 @@ def generate_puzzle(steps=2, lang="en"):
             dead_end = False
             
             for i in range(steps):
-                # 呼叫你寫好的正向 API 抓取目前頁面的所有連結
-                links = get_fwd_links_api(current_title, lang)
+                # 使用 HTML 解析，確保題目路徑是玩家畫面上真的能點到的連結
+                links = get_fwd_links_html(current_title, lang)
                 
                 # 排除已經走過的節點，避免原地繞圈圈 (例如 A -> B -> A)
                 valid_links = [link for link in links if link not in path_taken]
@@ -128,6 +199,19 @@ def find_path(start_url, target_url):
     lang = "zh" if "zh.wikipedia" in start_url else "en"
     start_title = get_title_from_url(start_url)
     target_title = get_title_from_url(target_url)
+    html_link_cache = {}
+
+    def get_visible_links(title):
+        if title not in html_link_cache:
+            html_link_cache[title] = get_fwd_links_html(title, lang)
+        return html_link_cache[title]
+
+    def is_playable_path(path_titles):
+        for from_title, to_title in zip(path_titles, path_titles[1:]):
+            if to_title not in get_visible_links(from_title):
+                logs.append(f"[驗證失敗] {from_title} 頁面找不到 {to_title}")
+                return False
+        return True
 
     if start_title == target_title:
         return [make_url(start_title, lang)], ["起點等同於終點!"], 0, 1
@@ -156,7 +240,7 @@ def find_path(start_url, target_url):
             log_msg = f"[正向] 探索: {cur_fwd} (深度 {depth_fwd})"
             print(log_msg)
             logs.append(log_msg)
-            links = get_fwd_links_api(cur_fwd, lang) # links = A 能去的點 e.g. [X,Y,Z]
+            links = get_visible_links(cur_fwd) # links = A 能去的點 e.g. [X,Y,Z]
             for next_title in links:
                 #假設next_title = B
                 if next_title in bwd_visit:#相遇
@@ -164,12 +248,13 @@ def find_path(start_url, target_url):
                     fwd_path = fwd_visit[cur_fwd] # ['A','B']
                     bwd_path = bwd_visit[next_title] #['D', 'C']
                     final_path_title = fwd_path + bwd_path[::-1] #['A','B','C','D']
-                    final_path_url = []
-                    for t in final_path_title:
-                        final_path_url.append(make_url(t,lang))
-                    
-                    logs.append(f"[正]找到相遇點: {next_title}")
-                    return final_path_url, logs, pass_time, len(fwd_visit) + len(bwd_visit)
+                    if is_playable_path(final_path_title):
+                        final_path_url = []
+                        for t in final_path_title:
+                            final_path_url.append(make_url(t,lang))
+                        
+                        logs.append(f"[正]找到相遇點: {next_title}")
+                        return final_path_url, logs, pass_time, len(fwd_visit) + len(bwd_visit)
                 if next_title not in fwd_visit:
                     fwd_queue.append(next_title)
                     fwd_visit[next_title] = fwd_visit[cur_fwd] + [next_title]
@@ -188,12 +273,12 @@ def find_path(start_url, target_url):
                     fwd_path = fwd_visit[prev_title]
                     bwd_path = bwd_visit[cur_bwd]
                     final_path_title = fwd_path + bwd_path[::-1]
-                    
-                    final_path_url = []
-                    for t in final_path_title:
-                        final_path_url.append(make_url(t, lang))
-                    logs.append(f"[反]找到相遇點: {prev_title}")
-                    return final_path_url, logs, pass_time, len(fwd_visit) + len(bwd_visit)
+                    if is_playable_path(final_path_title):
+                        final_path_url = []
+                        for t in final_path_title:
+                            final_path_url.append(make_url(t, lang))
+                        logs.append(f"[反]找到相遇點: {prev_title}")
+                        return final_path_url, logs, pass_time, len(fwd_visit) + len(bwd_visit)
                 if prev_title not in bwd_visit:
                     bwd_queue.append(prev_title)
                     bwd_visit[prev_title] = bwd_visit[cur_bwd] + [prev_title]
@@ -201,3 +286,6 @@ def find_path(start_url, target_url):
     logs.append(f"找不到結果")
     print('\n找不到路徑')
     raise TimeoutErrorWithLogs("Path not found.", logs, pass_time, len(fwd_visit) + len(bwd_visit))
+
+
+    

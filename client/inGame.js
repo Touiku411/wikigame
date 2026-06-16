@@ -1,5 +1,8 @@
  // AI提示按鈕
 const hintBtn = document.getElementById('hint-btn');
+const answerBtn = document.getElementById('answerBtn');
+const answerPathList = document.getElementById('answerPathList');
+const endGameBtn = document.getElementById('endGameBtn');
 let gameTarget = "";
 // 目前所在的條目標題（例如 "Fruit"）
 let currentTitle = "";
@@ -31,6 +34,11 @@ hintBtn.addEventListener('click', async () => {
 });
 
  let solutionPath = []; // 後端算出的最短路徑 (URL 陣列)
+ let suggestedPathTitles = []; // 玩家已走路徑 + 從目前頁面到終點的最短路徑
+ let remainingPathTitles = []; // 從目前頁面到終點的答案
+ let remainingPathDisplayNames = []; // 玩家畫面上實際要點的文字
+ let lockedAnswerPathTitles = []; // 第一次顯示答案後鎖定的答案路徑
+ let lockedAnswerDisplayNames = []; // 鎖定答案的顯示文字
 
     // inGame.html 初始化
     document.addEventListener("DOMContentLoaded", function() {
@@ -45,6 +53,12 @@ hintBtn.addEventListener('click', async () => {
             currentTitle = startTitle;
             pathHistory = [startTitle];
             solutionPath = JSON.parse(solutionPathFromSession); // 最短路徑
+            suggestedPathTitles = solutionPath.map(urlToTitle);
+            remainingPathTitles = [];
+            remainingPathDisplayNames = [];
+            lockedAnswerPathTitles = [];
+            lockedAnswerDisplayNames = [];
+            gameTarget = targetTitle;
 
             document.getElementById("targetTitle").innerText = targetTitle;
             document.getElementById("currentTitle").innerText = currentTitle;
@@ -68,6 +82,38 @@ hintBtn.addEventListener('click', async () => {
             alert("遊戲資訊遺失，請重新開始");
             window.location.href = "index.html";
         }
+    });
+
+    answerBtn.addEventListener('click', async () => {
+        if (!currentTitle || !targetTitle) {
+            alert('請先開始遊戲。');
+            return;
+        }
+
+        answerBtn.disabled = true;
+        answerBtn.innerText = '搜尋中...';
+
+        try {
+            await prepareLockedAnswerPath();
+            renderAnswerPath();
+            answerPathList.hidden = false;
+            answerBtn.innerText = '更新答案';
+        } catch (err) {
+            console.error("顯示答案失敗:", err);
+            alert(`顯示答案失敗：${err.message || '請稍後再試'}`);
+            answerBtn.innerText = '顯示答案';
+        } finally {
+            answerBtn.disabled = false;
+        }
+    });
+
+    endGameBtn.addEventListener('click', () => {
+        clearInterval(timerId);
+        sessionStorage.removeItem("startTitle");
+        sessionStorage.removeItem("targetTitle");
+        sessionStorage.removeItem("solutionPath");
+        sessionStorage.removeItem("gameStartTime");
+        window.location.href = "index.html";
     });
 
     let seconds = 0;
@@ -113,6 +159,113 @@ hintBtn.addEventListener('click', async () => {
         }
     }
 
+    function urlToTitle(url) {
+        const rawTitle = url.split('/wiki/')[1] || "";
+        return decodeURIComponent(rawTitle).replace(/_/g, ' ');
+    }
+
+    async function fetchPathFromCurrent() {
+        const response = await fetch('/api/path', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                current_title: currentTitle,
+                target_title: targetTitle
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            return data;
+        }
+
+        throw new Error(data.error || '找不到路徑');
+    }
+
+    async function findPathFromCurrent() {
+        const data = await fetchPathFromCurrent();
+        return data.path;
+    }
+
+    async function refreshSuggestedPathFromCurrent() {
+        const remainingPath = await findPathFromCurrent();
+        const remainingTitles = remainingPath.map(urlToTitle);
+
+        // pathHistory 已經包含 currentTitle，所以剩餘路徑要跳過第一個 currentTitle。
+        suggestedPathTitles = pathHistory.concat(remainingTitles.slice(1));
+        console.log("目前完整建議路徑:", suggestedPathTitles);
+
+        updateProgress();
+        return suggestedPathTitles;
+    }
+
+    async function prepareLockedAnswerPath() {
+        const currentIndexInLockedPath = lockedAnswerPathTitles.indexOf(currentTitle);
+
+        if (currentIndexInLockedPath !== -1) {
+            remainingPathTitles = lockedAnswerPathTitles.slice(currentIndexInLockedPath);
+            remainingPathDisplayNames = lockedAnswerDisplayNames.slice(currentIndexInLockedPath);
+            return remainingPathTitles;
+        }
+
+        const data = await fetchPathFromCurrent();
+        remainingPathTitles = data.path.map(urlToTitle);
+        remainingPathDisplayNames = data.display_path || remainingPathTitles;
+        lockedAnswerPathTitles = remainingPathTitles;
+        lockedAnswerDisplayNames = remainingPathDisplayNames;
+
+        return remainingPathTitles;
+    }
+
+    function updateLockedAnswerAfterMove() {
+        if (lockedAnswerPathTitles.length === 0) {
+            hideAnswerPath();
+            return;
+        }
+
+        const currentIndexInLockedPath = lockedAnswerPathTitles.indexOf(currentTitle);
+
+        if (currentIndexInLockedPath === -1) {
+            lockedAnswerPathTitles = [];
+            lockedAnswerDisplayNames = [];
+            remainingPathTitles = [];
+            remainingPathDisplayNames = [];
+            hideAnswerPath();
+            return;
+        }
+
+        remainingPathTitles = lockedAnswerPathTitles.slice(currentIndexInLockedPath);
+        remainingPathDisplayNames = lockedAnswerDisplayNames.slice(currentIndexInLockedPath);
+
+        if (!answerPathList.hidden) {
+            renderAnswerPath();
+            answerBtn.innerText = '更新答案';
+        }
+    }
+
+    function hideAnswerPath() {
+        answerPathList.hidden = true;
+        answerPathList.innerHTML = "";
+        answerBtn.innerText = '顯示答案';
+    }
+
+    function renderAnswerPath() {
+        answerPathList.innerHTML = "";
+
+        const displayNames = remainingPathDisplayNames.length > 0
+            ? remainingPathDisplayNames
+            : remainingPathTitles;
+
+        displayNames.forEach(title => {
+            const li = document.createElement("li");
+            li.innerText = title;
+            answerPathList.appendChild(li);
+        });
+    }
+
     // 處理連結點擊事件
     function handleLinkClick(e, currentPageTitle) {
         const link = e.target.closest('a');
@@ -144,7 +297,7 @@ hintBtn.addEventListener('click', async () => {
     }
 
     // 跳轉到新的 Wiki 頁面
-    function goToPage(pageTitle) {
+    async function goToPage(pageTitle) {
         currentTitle = pageTitle;
         stepCount++;
         pathHistory.push(pageTitle);
@@ -155,18 +308,24 @@ hintBtn.addEventListener('click', async () => {
         renderPath();
         updateProgress();
         updateBackButton();
+        updateLockedAnswerAfterMove();
 
         // 檢查是否到達目標
         if (currentTitle === targetTitle) {
             finishGame();
         } else {
-            // 載入新頁面
             loadWikiPage(currentTitle);
+
+            try {
+                await refreshSuggestedPathFromCurrent();
+            } catch (err) {
+                console.error("重新找路徑失敗:", err);
+            }
         }
     }
 
     // 返回上一個頁面
-    function goBackPage() {
+    async function goBackPage() {
         if (pathHistory.length <= 1) {
             alert("已經在第一頁了");
             return;
@@ -183,9 +342,15 @@ hintBtn.addEventListener('click', async () => {
         renderPath();
         updateProgress();
         updateBackButton();
+        updateLockedAnswerAfterMove();
 
-        // 載入頁面
         loadWikiPage(currentTitle);
+
+        try {
+            await refreshSuggestedPathFromCurrent();
+        } catch (err) {
+            console.error("重新找路徑失敗:", err);
+        }
     }
 
     // 更新返回按鈕顯示狀態
@@ -235,9 +400,32 @@ hintBtn.addEventListener('click', async () => {
         });
     }
 
+  
     function updateProgress() {
-        // 簡單的進度計算：根據步數（最多 20 步為 100%）
-        const progress = Math.min((stepCount / 20) * 100, 100);
-        document.querySelector(".progress-fill").style.width = progress + "%";
-        document.querySelector(".progress-percent").innerText = Math.round(progress) + "%";
+    // 1. 後端傳來的 solutionPath 是 URL 陣列，我們需要把它們轉換成純標題陣列來做比對
+    const solutionTitles = suggestedPathTitles.length > 0
+        ? suggestedPathTitles
+        : solutionPath.map(urlToTitle);
+
+    // 2. 尋找目前所在的頁面，在正確解答路徑中的哪一個位置
+    const currentIndexInSolution = solutionTitles.indexOf(currentTitle);
+
+    let progress = 0;
+    
+    // 如果 currentIndexInSolution 不是 -1，代表玩家目前走在正確的路徑上
+    if (currentIndexInSolution !== -1) {
+        // 分母為 總節點數 - 1 (因為起點的進度應該要是 0%)
+        // Math.max(1, ...) 是為了防止起點等於終點時發生除以零的錯誤
+        const totalSteps = Math.max(1, solutionTitles.length - 1);
+        progress = (currentIndexInSolution / totalSteps) * 100;
+    } else {
+        // 如果目前頁面不在解答路徑中 (偏離軌道)，進度歸 0
+        progress = 0;
     }
+
+    // 3. 更新進度條 UI
+    document.querySelector(".progress-fill").style.width = progress + "%";
+    document.querySelector(".progress-percent").innerText = Math.round(progress) + "%";
+    }
+
+    

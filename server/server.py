@@ -8,6 +8,18 @@ from dotenv import load_dotenv
 load_dotenv()
 app = Flask(__name__, static_folder = '../client', static_url_path = '')
 
+def clean_noise(main_content):
+    """統一過濾維基百科網頁上的雜訊，確保爬蟲與玩家看到的畫面一致"""
+    # 1. 移除腳本、樣式、上標(參考文獻[1][2]等)、表格(包含右側的 Infobox)
+    for element in main_content(["script", "style", "sup", "table"]):
+        element.decompose()
+    
+    # 2. 移除維基百科常見的底部導覽列 (navbox)、參考文獻區塊 (reflist) 與編輯按鈕
+    for element in main_content.find_all(['div', 'span'], class_=['reflist', 'navbox', 'infobox', 'metadata', 'mw-editsection']):
+        element.decompose()
+        
+    return main_content
+
 #從維基百科頁面提取純文本內容，並限制在3000字以內
 
 def extract_article_text(title):
@@ -21,12 +33,11 @@ def extract_article_text(title):
     if not main_content:
         return ""
 
-    for element in main_content(["script", "style", "sup", "table"]):
-        element.decompose()
+    # 套用統一過濾器
+    main_content = clean_noise(main_content)
 
     text = ' '.join(main_content.get_text(" ", strip=True).split())
     return text[:3000]
-
 
 def get_gemini_hint(current_title, target_title, article_text):
     api_key = os.getenv('GEMINI_API_KEY')
@@ -61,6 +72,43 @@ def get_gemini_hint(current_title, target_title, article_text):
 def home():
     return send_from_directory(app.static_folder , 'index.html')
 
+@app.route('/api/path', methods=['POST'])
+def find_path_from_current():
+    try:
+        data = request.get_json() or {}
+        current_title = data.get('current_title', '').strip()
+        target_title = data.get('target_title', '').strip()
+
+        if not current_title or not target_title:
+            return jsonify({'success': False, 'error': '缺少 current_title 或 target_title'}), 400
+
+        current_url = crawler.make_url(current_title, "en")
+        target_url = crawler.make_url(target_title, "en")
+
+        path, logs, elapsed_time, discovered = crawler.find_path(current_url, target_url)
+        display_path = crawler.get_path_display_names(path, "en")
+
+        return jsonify({
+            'success': True,
+            'path': path,
+            'display_path': display_path,
+            'logs': logs,
+            'time': elapsed_time,
+            'discovered': discovered
+        })
+
+    except crawler.TimeoutErrorWithLogs as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'logs': e.logs,
+            'time': e.time,
+            'discovered': e.discovered
+        }), 408
+    except Exception as e:
+        app.logger.error(f"Current path error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
 @app.route('/find_path', methods=['Get', 'POST'])
 def find_path():
     start_title = ""
@@ -143,6 +191,9 @@ def get_wiki_content(title):
                 'error': '找不到內文區塊'
             }), 404
         
+         # 套用統一過濾器，確保玩家畫面上不會出現雜訊連結
+        main_content = clean_noise(main_content)
+
         #修復圖片破圖
         for img in main_content.find_all('img'):
             if img.has_attr('src'):
