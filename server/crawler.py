@@ -122,7 +122,8 @@ def get_bwd_links_api(title, lang="en"):
     except Exception as e:
         print(f"API ERROR for {title}: {e}")
         return []
-
+    
+# 產生題目
 def generate_puzzle(steps=2, lang="en"):
     print(f"\n🎲 開始產生 {steps} 步的隨機題目...")
     

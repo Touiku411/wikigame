@@ -12,7 +12,7 @@ app = Flask(__name__, static_folder = '../client', static_url_path = '')
 def home():
     return send_from_directory(app.static_folder , 'index.html')
 
-
+# 鄧
 def clean_noise(main_content):
     """統一過濾維基百科網頁上的雜訊，確保爬蟲與玩家看到的畫面一致"""
     # 1. 移除腳本、樣式、上標(參考文獻[1][2]等)、表格(包含右側的 Infobox)
@@ -26,7 +26,7 @@ def clean_noise(main_content):
     return main_content
 
 #從維基百科頁面提取純文本內容，並限制在3000字以內
-
+# 鄧
 def extract_article_text(title):
     encoded_title = urllib.parse.quote(title)
     url = f"https://en.wikipedia.org/wiki/{encoded_title}"
@@ -151,8 +151,6 @@ def find_path():
         return jsonify({'error': 'An error occurred while finding path', 'logs': logs, 'time': time, 'discovered': discovered}), 500
 
 # 提示 API，接受目前題目標題和目標標題，返回一段提示文字
-
-
 @app.route('/api/hint')
 def get_hint():
     try:
