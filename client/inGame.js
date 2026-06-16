@@ -36,9 +36,7 @@ hintBtn.addEventListener('click', async () => {
  let solutionPath = []; // 後端算出的最短路徑 (URL 陣列)
  let suggestedPathTitles = []; // 玩家已走路徑 + 從目前頁面到終點的最短路徑
  let remainingPathTitles = []; // 從目前頁面到終點的答案
- let remainingPathDisplayNames = []; // 玩家畫面上實際要點的文字
  let lockedAnswerPathTitles = []; // 第一次顯示答案後鎖定的答案路徑
- let lockedAnswerDisplayNames = []; // 鎖定答案的顯示文字
 
     // inGame.html 初始化
     document.addEventListener("DOMContentLoaded", function() {
@@ -55,9 +53,7 @@ hintBtn.addEventListener('click', async () => {
             solutionPath = JSON.parse(solutionPathFromSession); // 最短路徑
             suggestedPathTitles = solutionPath.map(urlToTitle);
             remainingPathTitles = [];
-            remainingPathDisplayNames = [];
             lockedAnswerPathTitles = [];
-            lockedAnswerDisplayNames = [];
             gameTarget = targetTitle;
 
             document.getElementById("targetTitle").innerText = targetTitle;
@@ -106,7 +102,94 @@ hintBtn.addEventListener('click', async () => {
             answerBtn.disabled = false;
         }
     });
+    //1
+    async function fetchPathFromCurrent() {
+        const response = await fetch('/api/path', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                current_title: currentTitle,
+                target_title: targetTitle
+            })
+        });
 
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            return data;
+        }
+
+        throw new Error(data.error || '找不到路徑');
+    }
+
+    // 確認目前路徑該怎麼走
+     async function prepareLockedAnswerPath() {
+        //如果目前不在上次路徑裡 回傳-1
+        const currentIndexInLockedPath = lockedAnswerPathTitles.indexOf(currentTitle);
+        //lockedAnswerPathTitles = [a, b, c], currentTitle = b, currentIndexInLockedPath = 1
+        if (currentIndexInLockedPath !== -1) {
+            //還在上次路徑裡
+
+            //slice(currentIndexInLockedPath) 從1開始往後切 剩下[b, c]
+            remainingPathTitles = lockedAnswerPathTitles.slice(currentIndexInLockedPath);
+            return remainingPathTitles;//回傳新路徑
+        }
+
+        const data = await fetchPathFromCurrent();
+        remainingPathTitles = data.path.map(urlToTitle);
+        lockedAnswerPathTitles = remainingPathTitles;
+
+        return remainingPathTitles;
+    }
+
+    //移動後檢查是否照著解答走
+    function updateLockedAnswerAfterMove() {
+        if (lockedAnswerPathTitles.length === 0) {
+            hideAnswerPath();
+            return;
+        }
+
+        const currentIndexInLockedPath = lockedAnswerPathTitles.indexOf(currentTitle);
+
+        //沒照著解答走
+        if (currentIndexInLockedPath === -1) {
+            lockedAnswerPathTitles = [];
+            remainingPathTitles = [];
+            hideAnswerPath();
+            return;
+        }
+
+        remainingPathTitles = lockedAnswerPathTitles.slice(currentIndexInLockedPath);
+
+        if (!answerPathList.hidden) {
+            renderAnswerPath();
+            answerBtn.innerText = '更新答案';
+        }
+    }
+
+    // 顯示路徑塞到html裡面
+    function renderAnswerPath() {
+        answerPathList.innerHTML = "";
+
+        const displayNames = remainingPathTitles;
+
+        displayNames.forEach(title => {
+            const li = document.createElement("li");
+            li.innerText = title;
+            answerPathList.appendChild(li);
+        });
+    }
+    // 隱藏顯示答案
+    function hideAnswerPath() {
+        answerPathList.hidden = true;
+        answerPathList.innerHTML = "";
+        answerBtn.innerText = '顯示答案';
+    }
+
+
+    
     endGameBtn.addEventListener('click', () => {
         clearInterval(timerId);
         sessionStorage.removeItem("startTitle");
@@ -164,27 +247,7 @@ hintBtn.addEventListener('click', async () => {
         return decodeURIComponent(rawTitle).replace(/_/g, ' ');
     }
 
-    async function fetchPathFromCurrent() {
-        const response = await fetch('/api/path', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                current_title: currentTitle,
-                target_title: targetTitle
-            })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-            return data;
-        }
-
-        throw new Error(data.error || '找不到路徑');
-    }
-
+    
     async function findPathFromCurrent() {
         const data = await fetchPathFromCurrent();
         return data.path;
@@ -202,69 +265,8 @@ hintBtn.addEventListener('click', async () => {
         return suggestedPathTitles;
     }
 
-    async function prepareLockedAnswerPath() {
-        const currentIndexInLockedPath = lockedAnswerPathTitles.indexOf(currentTitle);
-
-        if (currentIndexInLockedPath !== -1) {
-            remainingPathTitles = lockedAnswerPathTitles.slice(currentIndexInLockedPath);
-            remainingPathDisplayNames = lockedAnswerDisplayNames.slice(currentIndexInLockedPath);
-            return remainingPathTitles;
-        }
-
-        const data = await fetchPathFromCurrent();
-        remainingPathTitles = data.path.map(urlToTitle);
-        remainingPathDisplayNames = data.display_path || remainingPathTitles;
-        lockedAnswerPathTitles = remainingPathTitles;
-        lockedAnswerDisplayNames = remainingPathDisplayNames;
-
-        return remainingPathTitles;
-    }
-
-    function updateLockedAnswerAfterMove() {
-        if (lockedAnswerPathTitles.length === 0) {
-            hideAnswerPath();
-            return;
-        }
-
-        const currentIndexInLockedPath = lockedAnswerPathTitles.indexOf(currentTitle);
-
-        if (currentIndexInLockedPath === -1) {
-            lockedAnswerPathTitles = [];
-            lockedAnswerDisplayNames = [];
-            remainingPathTitles = [];
-            remainingPathDisplayNames = [];
-            hideAnswerPath();
-            return;
-        }
-
-        remainingPathTitles = lockedAnswerPathTitles.slice(currentIndexInLockedPath);
-        remainingPathDisplayNames = lockedAnswerDisplayNames.slice(currentIndexInLockedPath);
-
-        if (!answerPathList.hidden) {
-            renderAnswerPath();
-            answerBtn.innerText = '更新答案';
-        }
-    }
-
-    function hideAnswerPath() {
-        answerPathList.hidden = true;
-        answerPathList.innerHTML = "";
-        answerBtn.innerText = '顯示答案';
-    }
-
-    function renderAnswerPath() {
-        answerPathList.innerHTML = "";
-
-        const displayNames = remainingPathDisplayNames.length > 0
-            ? remainingPathDisplayNames
-            : remainingPathTitles;
-
-        displayNames.forEach(title => {
-            const li = document.createElement("li");
-            li.innerText = title;
-            answerPathList.appendChild(li);
-        });
-    }
+   
+    
 
     // 處理連結點擊事件
     function handleLinkClick(e, currentPageTitle) {
@@ -284,10 +286,10 @@ hintBtn.addEventListener('click', async () => {
 
             // 檢查該連結是否在允許範圍內（檢查是否能到達目標）
             // 簡單方案：只要不是已經走過的頁面，就允許
-            if (pathHistory.includes(decodedNextTitle)) {
-                alert(`「${decodedNextTitle}」已經走過了，請選擇其他連結`);
-                return;
-            }
+            // if (pathHistory.includes(decodedNextTitle)) {
+            //     alert(`「${decodedNextTitle}」已經走過了，請選擇其他連結`);
+            //     return;
+            // }
 
             goToPage(decodedNextTitle);
         } else {
